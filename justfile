@@ -37,6 +37,10 @@ fmt:
 fmt-check:
     ./scripts/gjf.sh check
 
+# Checkstyle: star/unused imports, braces, naming, public-API Javadoc.
+lint:
+    ./mvnw -B -q checkstyle:check@checkstyle
+
 # Javadoc must build without errors (doclint) since Central requires it.
 javadoc:
     ./mvnw -B -q -Prelease -DskipTests -Dgpg.skip=true javadoc:javadoc

@@ -11,6 +11,11 @@ pre-commit:
       run: just fmt-check
       fail_text: "Run 'just fmt' before committing"
 
+    java-lint:
+      glob: "{*.java,config/checkstyle.xml}"
+      run: just lint
+      fail_text: "Fix Checkstyle findings (no star imports, braces required, public Javadoc)"
+
     java-build:
       glob: "{*.java,pom.xml}"
       run: just build

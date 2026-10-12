@@ -9,6 +9,7 @@ import java.io.OutputStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.ref.Cleaner;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -18,17 +19,81 @@ import java.util.concurrent.locks.ReentrantLock;
  * by one thread at a time.
  */
 public final class MxcProcess implements AutoCloseable {
-    private final ReentrantLock lock = new ReentrantLock();
-    private MemorySegment handle;
-    private boolean closed;
+    private static final Cleaner CLEANER = Cleaner.create();
+
+    /**
+     * Everything needed to release the native process. Held by the {@link Cleaner} (and so must not
+     * reference the {@code MxcProcess}), which makes a forgotten {@code close()} non-fatal.
+     */
+    private static final class Reclaim implements Runnable {
+        final ReentrantLock lock = new ReentrantLock();
+        MemorySegment handle;
+        boolean closed;
+        StdinStream stdin;
+        OutStream stdout;
+        OutStream stderr;
+
+        Reclaim(MemorySegment handle) {
+            this.handle = handle;
+        }
+
+        void closeStreams() {
+            try {
+                if (stdin != null) {
+                    stdin.close();
+                }
+            } catch (IOException ignored) {
+            }
+            if (stdout != null) {
+                stdout.close();
+            }
+            if (stderr != null) {
+                stderr.close();
+            }
+        }
+
+        /** Kill, close streams, free the handle. Runs at most once (via the Cleanable). */
+        @Override
+        public void run() {
+            // Kill first: this unblocks in-flight stream reads/writes so closeStreams() cannot
+            // hang behind them (notably when no native stdout/stderr closer exists).
+            lock.lock();
+            try {
+                if (!closed) {
+                    try {
+                        Native.callInt(Native.KILL, handle);
+                    } catch (RuntimeException ignored) {
+                    }
+                }
+            } finally {
+                lock.unlock();
+            }
+            closeStreams();
+            lock.lock();
+            try {
+                if (closed) {
+                    return;
+                }
+                closed = true;
+                Native.call(Native.SANDBOX_FREE, handle);
+                handle = MemorySegment.NULL;
+            } finally {
+                lock.unlock();
+            }
+        }
+    }
+
+    private final Reclaim state;
+    private final Cleaner.Cleanable cleanable;
     private Result exited;
 
     private final StdinStream stdin;
     private final OutStream stdout;
     private final OutStream stderr;
 
-    MxcProcess(MemorySegment handle) {
-        this.handle = handle;
+    MxcProcess(MemorySegment nativeHandle) {
+        this.state = new Reclaim(nativeHandle);
+        final MemorySegment handle = nativeHandle;
         MemorySegment in;
         MemorySegment out;
         MemorySegment err;
@@ -57,6 +122,10 @@ public final class MxcProcess implements AutoCloseable {
         this.stdin = Native.isNull(in) ? null : new StdinStream(in);
         this.stdout = Native.isNull(out) ? null : new OutStream(out, outCloser);
         this.stderr = Native.isNull(err) ? null : new OutStream(err, errCloser);
+        state.stdin = stdin;
+        state.stdout = stdout;
+        state.stderr = stderr;
+        this.cleanable = CLEANER.register(this, state);
     }
 
     /** Child stdin; closing it delivers EOF. Null if not piped. */
@@ -74,71 +143,73 @@ public final class MxcProcess implements AutoCloseable {
         return stderr;
     }
 
-    /** The native process id, or 0 once the process has been closed. */
+    /** The native process id, or 0 once the process has been state.closed. */
     public long pid() {
-        lock.lock();
+        state.lock.lock();
         try {
-            return closed ? 0 : Integer.toUnsignedLong(Native.callInt(Native.SANDBOX_ID, handle));
+            return state.closed
+                    ? 0
+                    : Integer.toUnsignedLong(Native.callInt(Native.SANDBOX_ID, state.handle));
         } finally {
-            lock.unlock();
+            state.lock.unlock();
         }
     }
 
     /** Security warnings raised at launch (for example a relaxed policy); empty if none. */
     public List<String> warnings() {
-        lock.lock();
+        state.lock.lock();
         try {
-            if (closed) {
+            if (state.closed) {
                 return List.of();
             }
             try (Arena a = Arena.ofConfined()) {
                 MemorySegment o = a.allocate(ValueLayout.ADDRESS);
-                Native.callInt(Native.SANDBOX_WARNINGS, handle, o);
+                Native.callInt(Native.SANDBOX_WARNINGS, state.handle, o);
                 String s = Native.takeString(o.get(ValueLayout.ADDRESS, 0));
                 return s == null ? List.of() : Mxc.stringList(s);
             }
         } finally {
-            lock.unlock();
+            state.lock.unlock();
         }
     }
 
     /** Resize a PTY process. */
     public void resize(int rows, int cols) {
-        lock.lock();
+        state.lock.lock();
         try {
             ensureOpen();
-            int st = Native.callInt(Native.PTY_RESIZE, handle, (short) rows, (short) cols);
+            int st = Native.callInt(Native.PTY_RESIZE, state.handle, (short) rows, (short) cols);
             if (st != 0) {
                 throw new MxcException(st, "pty resize failed");
             }
         } finally {
-            lock.unlock();
+            state.lock.unlock();
         }
     }
 
     /** Kill the process tree. */
     public void kill() {
-        lock.lock();
+        state.lock.lock();
         try {
             ensureOpen();
-            int st = Native.callInt(Native.KILL, handle);
+            int st = Native.callInt(Native.KILL, state.handle);
             if (st != 0) {
                 throw new MxcException(st, "kill failed");
             }
         } finally {
-            lock.unlock();
+            state.lock.unlock();
         }
     }
 
     private void ensureOpen() {
-        if (closed) {
-            throw new IllegalStateException("mxc process is closed");
+        if (state.closed) {
+            throw new IllegalStateException("mxc process is state.closed");
         }
     }
 
     /** Poll once. Returns the exit status if the process has exited, else null. */
     public Result poll() {
-        lock.lock();
+        state.lock.lock();
         try {
             if (exited != null) {
                 return exited;
@@ -148,7 +219,7 @@ public final class MxcProcess implements AutoCloseable {
                 MemorySegment e = a.allocate(ValueLayout.JAVA_INT);
                 MemorySegment r = a.allocate(ValueLayout.JAVA_INT);
                 MemorySegment t = a.allocate(ValueLayout.JAVA_INT);
-                int st = Native.callInt(Native.TRY_WAIT, handle, e, r, t);
+                int st = Native.callInt(Native.TRY_WAIT, state.handle, e, r, t);
                 if (st != 0) {
                     throw new MxcException(st, "wait failed");
                 }
@@ -166,7 +237,7 @@ public final class MxcProcess implements AutoCloseable {
                 return exited;
             }
         } finally {
-            lock.unlock();
+            state.lock.unlock();
         }
     }
 
@@ -254,69 +325,34 @@ public final class MxcProcess implements AutoCloseable {
         try {
             in.transferTo(sink);
         } catch (IOException ignored) {
-            /* closed or EOF */
+            /* state.closed or EOF */
         }
     }
 
     private String metadata() {
-        lock.lock();
+        state.lock.lock();
         try {
-            if (closed) {
+            if (state.closed) {
                 return null;
             }
             try (Arena a = Arena.ofConfined()) {
                 MemorySegment o = a.allocate(ValueLayout.ADDRESS);
-                Native.callInt(Native.SANDBOX_METADATA, handle, o);
+                Native.callInt(Native.SANDBOX_METADATA, state.handle, o);
                 return Native.takeString(o.get(ValueLayout.ADDRESS, 0));
             }
         } finally {
-            lock.unlock();
+            state.lock.unlock();
         }
     }
 
     private void closeStreams() {
-        try {
-            if (stdin != null) {
-                stdin.close();
-            }
-        } catch (IOException ignored) {
-        }
-        if (stdout != null) {
-            stdout.close();
-        }
-        if (stderr != null) {
-            stderr.close();
-        }
+        state.closeStreams();
     }
 
     /** Release the process; kills the tree if still running. Idempotent. */
     @Override
     public void close() {
-        // Kill first: this unblocks in-flight stream reads/writes so closeStreams() cannot hang
-        // behind them (notably when no native stdout/stderr closer exists).
-        lock.lock();
-        try {
-            if (!closed) {
-                try {
-                    Native.callInt(Native.KILL, handle);
-                } catch (RuntimeException ignored) {
-                }
-            }
-        } finally {
-            lock.unlock();
-        }
-        closeStreams();
-        lock.lock();
-        try {
-            if (closed) {
-                return;
-            }
-            closed = true;
-            Native.call(Native.SANDBOX_FREE, handle);
-            handle = MemorySegment.NULL;
-        } finally {
-            lock.unlock();
-        }
+        cleanable.clean();
     }
 
     // ---- streams -----------------------------------------------------------

@@ -1,0 +1,7 @@
+/target/
+/.mxc/
+*.class
+.idea/
+*.iml
+.DS_Store
+/.tools/

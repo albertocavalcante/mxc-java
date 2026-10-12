@@ -74,12 +74,17 @@ public final class Native {
         return (os.contains("win") ? "windows" : os.contains("mac") ? "macos" : "linux") + "-" + a;
     }
 
+    /** True for null, blank, or an unresolved Maven placeholder such as {@code ${env.X}}. */
+    private static boolean unset(String v) {
+        return v == null || v.isBlank() || v.contains("${");
+    }
+
     private static SymbolLookup load() {
         String file = libFile();
         Arena global = Arena.global();
         String prop = System.getProperty("mxc.ffi.path");
-        if (prop == null || prop.isBlank()) prop = System.getenv("MXC_FFI_DIR");
-        if (prop != null && !prop.isBlank()) {
+        if (unset(prop)) prop = System.getenv("MXC_FFI_DIR");
+        if (!unset(prop)) {
             Path p = Path.of(prop);
             if (Files.isDirectory(p)) p = p.resolve(file);
             if (!Files.isRegularFile(p)) {
@@ -221,7 +226,11 @@ public final class Native {
         return s == null || s.equals(MemorySegment.NULL) || s.address() == 0;
     }
 
-    /** Copy a NUL-terminated C string out of native memory; null for a null pointer. */
+    /**
+     * Copy a NUL-terminated C string out of native memory; null for a null pointer. The mxc_ffi
+     * run-result API already decoded the output lossily (invalid UTF-8 and NUL bytes become
+     * U+FFFD), so one-shot capture is not binary-safe; the streaming API carries raw bytes.
+     */
     public static byte[] cBytes(MemorySegment p) {
         if (isNull(p)) return null;
         MemorySegment all = p.reinterpret(Long.MAX_VALUE);

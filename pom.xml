@@ -45,7 +45,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
     <!-- Directory containing libmxc_ffi; see README. -->
-    <mxc.ffi.dir>${env.MXC_FFI_DIR}</mxc.ffi.dir>
+    <mxc.ffi.dir></mxc.ffi.dir>
     <jackson.version>2.18.2</jackson.version>
   </properties>
 
@@ -130,6 +130,19 @@
   </build>
 
   <profiles>
+    <!-- Picks up MXC_FFI_DIR when set; otherwise mxc.ffi.dir stays empty (an unresolved
+         ${env.X} would otherwise leak through as a literal string). -->
+    <profile>
+      <id>mxc-ffi-from-env</id>
+      <activation>
+        <property>
+          <name>env.MXC_FFI_DIR</name>
+        </property>
+      </activation>
+      <properties>
+        <mxc.ffi.dir>${env.MXC_FFI_DIR}</mxc.ffi.dir>
+      </properties>
+    </profile>
     <!-- mvn -Prelease deploy: signed sources + javadoc jars and Central Portal publishing.
          Requires GPG and Central credentials; see CONTRIBUTING.md. -->
     <profile>

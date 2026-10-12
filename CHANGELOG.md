@@ -15,3 +15,17 @@ Initial implementation, tested against MXC `c6f301d` (see `MXC_REF`) on JDK 25:
 - Live processes with `InputStream`/`OutputStream` stdio, `waitFor`, `output`,
   `kill`, `resize`, and interrupt-driven cancellation.
 - Persistent-container lifecycle, discovery, telemetry consent, `MxcException`.
+
+Behavior worth knowing (found while hardening before the first tag):
+
+- `MxcProcess.close()` kills the tree first, so it cannot hang behind a blocked
+  stream read or write. `output()` closes stdin and bounds the drain when a
+  grandchild keeps the pipes open.
+- `runJson`/`spawnJson` reject a NUL byte instead of letting the C boundary
+  silently truncate the request.
+- Telemetry: `telemetryConsent()` and `telemetryPolicy()` return `ConsentState`
+  and `PolicyState`; they are bare strings natively, not JSON.
+- `Workload.withTimeout` rejects values above the schema maximum; an unresolved
+  `${env.MXC_FFI_DIR}` no longer leaks into the library path.
+- Captured output from `run` is decoded lossily by the native layer (invalid
+  UTF-8 and NUL become U+FFFD); use `spawn` for raw bytes.

@@ -29,18 +29,30 @@ public final class MxcProcess implements AutoCloseable {
 
     MxcProcess(MemorySegment handle) {
         this.handle = handle;
-        MemorySegment in = Native.callPtr(Native.TAKE_STDIN, handle);
-        MemorySegment out = Native.callPtr(Native.TAKE_STDOUT, handle);
-        MemorySegment err = Native.callPtr(Native.TAKE_STDERR, handle);
+        MemorySegment in, out, err, outCloser, errCloser;
+        try {
+            in = Native.callPtr(Native.TAKE_STDIN, handle);
+            out = Native.callPtr(Native.TAKE_STDOUT, handle);
+            err = Native.callPtr(Native.TAKE_STDERR, handle);
+            outCloser =
+                    Native.isNull(out)
+                            ? MemorySegment.NULL
+                            : Native.callPtr(Native.STDOUT_CLOSER, handle);
+            errCloser =
+                    Native.isNull(err)
+                            ? MemorySegment.NULL
+                            : Native.callPtr(Native.STDERR_CLOSER, handle);
+        } catch (RuntimeException e) {
+            // The caller never sees this object, so it cannot free the handle.
+            try {
+                Native.call(Native.SANDBOX_FREE, handle);
+            } catch (RuntimeException ignored) {
+            }
+            throw e;
+        }
         this.stdin = Native.isNull(in) ? null : new StdinStream(in);
-        this.stdout =
-                Native.isNull(out)
-                        ? null
-                        : new OutStream(out, Native.callPtr(Native.STDOUT_CLOSER, handle));
-        this.stderr =
-                Native.isNull(err)
-                        ? null
-                        : new OutStream(err, Native.callPtr(Native.STDERR_CLOSER, handle));
+        this.stdout = Native.isNull(out) ? null : new OutStream(out, outCloser);
+        this.stderr = Native.isNull(err) ? null : new OutStream(err, errCloser);
     }
 
     /** Child stdin; closing it delivers EOF. Null if not piped. */
@@ -171,9 +183,16 @@ public final class MxcProcess implements AutoCloseable {
 
     /** Drain stdout/stderr concurrently, wait for exit, and return everything. */
     public Result output() throws InterruptedException {
+        // Nothing is supplied on stdin here; close it so children such as `cat` see EOF.
+        try {
+            if (stdin != null) stdin.close();
+        } catch (IOException ignored) {
+        }
         ByteArrayOutputStream so = new ByteArrayOutputStream(), se = new ByteArrayOutputStream();
-        Thread t1 = Thread.ofVirtual().start(() -> drain(stdout, so));
-        Thread t2 = Thread.ofVirtual().start(() -> drain(stderr, se));
+        // Platform threads: the drains block inside native downcalls, which would pin virtual
+        // threads.
+        Thread t1 = Thread.ofPlatform().daemon().start(() -> drain(stdout, so));
+        Thread t2 = Thread.ofPlatform().daemon().start(() -> drain(stderr, se));
         Result r;
         try {
             r = waitFor();
@@ -181,8 +200,15 @@ public final class MxcProcess implements AutoCloseable {
             closeStreams();
             throw ie;
         }
-        t1.join();
-        t2.join();
+        // The child has exited, but a surviving grandchild may keep the pipes open: give the
+        // drains a short grace, then close the streams (off-thread; close may block behind a
+        // read) and return what was captured. ByteArrayOutputStream is synchronized.
+        long deadline = System.nanoTime() + DRAIN_GRACE_NANOS;
+        t1.join(Math.max(1, (deadline - System.nanoTime()) / 1_000_000));
+        t2.join(Math.max(1, (deadline - System.nanoTime()) / 1_000_000));
+        if (t1.isAlive() || t2.isAlive()) {
+            Thread.ofPlatform().daemon().start(this::closeStreams);
+        }
         return new Result(
                 r.exitCode(),
                 r.timedOut(),
@@ -191,6 +217,8 @@ public final class MxcProcess implements AutoCloseable {
                 warnings(),
                 metadata());
     }
+
+    private static final long DRAIN_GRACE_NANOS = 500_000_000L;
 
     private static void drain(InputStream in, ByteArrayOutputStream sink) {
         if (in == null) return;
@@ -227,6 +255,19 @@ public final class MxcProcess implements AutoCloseable {
     /** Release the process; kills the tree if still running. Idempotent. */
     @Override
     public void close() {
+        // Kill first: this unblocks in-flight stream reads/writes so closeStreams() cannot hang
+        // behind them (notably when no native stdout/stderr closer exists).
+        lock.lock();
+        try {
+            if (!closed) {
+                try {
+                    Native.callInt(Native.KILL, handle);
+                } catch (RuntimeException ignored) {
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
         closeStreams();
         lock.lock();
         try {

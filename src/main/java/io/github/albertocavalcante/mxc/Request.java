@@ -187,6 +187,9 @@ public record Request(
         }
     }
 
+    /** Largest {@code timeout} (milliseconds) the request schema accepts. */
+    public static final long MAX_TIMEOUT_MILLIS = 4294967295L;
+
     /** The process to execute. {@code timeout} is milliseconds on the wire. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Workload(
@@ -212,6 +215,13 @@ public record Request(
         }
 
         public Workload withTimeout(Duration d) {
+            if (d.compareTo(Duration.ofMillis(MAX_TIMEOUT_MILLIS)) > 0)
+                throw new IllegalArgumentException(
+                        "timeout "
+                                + d
+                                + " exceeds the schema maximum of "
+                                + MAX_TIMEOUT_MILLIS
+                                + " ms");
             long ms = d.toMillis();
             return new Workload(
                     commandLine, cwd, env, inheritDefaultEnv, d.isZero() ? null : Math.max(1, ms));

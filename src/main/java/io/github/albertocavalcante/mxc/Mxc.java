@@ -79,6 +79,7 @@ public final class Mxc {
      * A non-zero workload exit code is not an exception.
      */
     public static Result runJson(String requestJson, Options options) {
+        checkJson(requestJson);
         try (Arena a = Arena.ofConfined()) {
             MemorySegment out = a.allocate(Native.RUN_RESULT);
             Native.callInt(
@@ -98,9 +99,10 @@ public final class Mxc {
         }
     }
 
-    /** Run on a virtual thread. */
+    /** Run on a platform thread (the native call blocks, which would pin a virtual thread). */
     public static CompletableFuture<Result> runAsync(Request request) {
-        return CompletableFuture.supplyAsync(() -> run(request), r -> Thread.ofVirtual().start(r));
+        return CompletableFuture.supplyAsync(
+                () -> run(request), r -> Thread.ofPlatform().daemon().start(r));
     }
 
     static Result consumeRunResult(MemorySegment out) {
@@ -171,6 +173,7 @@ public final class Mxc {
     }
 
     public static MxcProcess spawnJson(String requestJson, Options options) {
+        checkJson(requestJson);
         try (Arena a = Arena.ofConfined()) {
             MemorySegment handle = a.allocate(ValueLayout.ADDRESS);
             MemorySegment err = a.allocate(Native.ERROR);
@@ -214,6 +217,17 @@ public final class Mxc {
     }
 
     // ---- errors / json helpers --------------------------------------------
+
+    /**
+     * Rejects a document the C boundary would silently cut at a NUL byte, which would run a
+     * different request than the caller wrote.
+     */
+    static void checkJson(String json) {
+        if (json.indexOf('\0') >= 0) {
+            throw new MxcException(
+                    ErrorCode.MALFORMED_REQUEST.status(), "request JSON contains a NUL byte");
+        }
+    }
 
     /** Build an exception from an MxcErrorDetail at {@code base + offset} of {@code seg}. */
     static MxcException errorFrom(int status, MemorySegment seg, long offset) {
@@ -284,6 +298,11 @@ public final class Mxc {
         env.put("phase", phase);
         if (sandboxId != null) env.put("sandboxId", sandboxId);
         if (body != null) env.setAll((ObjectNode) JSON.valueToTree(body));
+        // Reserved envelope keys always win over caller-supplied body fields.
+        env.put("version", Request.SCHEMA_VERSION);
+        env.put("phase", phase);
+        if (sandboxId != null) env.put("sandboxId", sandboxId);
+        else env.remove("sandboxId");
         try (Arena a = Arena.ofConfined()) {
             MemorySegment out = a.allocate(Native.STATE_RESULT);
             int st =
@@ -354,29 +373,79 @@ public final class Mxc {
 
     // ---- telemetry consent --------------------------------------------------
 
-    public static JsonNode telemetryConsent() {
-        return telemetry(Native.TELEMETRY_CONSENT);
+    /** Effective telemetry consent. Non-Windows hosts report {@code NOT_APPLICABLE}. */
+    public enum ConsentState {
+        GRANTED("granted"),
+        DENIED("denied"),
+        UNDETERMINED("undetermined"),
+        NOT_APPLICABLE("not-applicable");
+
+        private final String wire;
+
+        ConsentState(String wire) {
+            this.wire = wire;
+        }
+
+        public String wire() {
+            return wire;
+        }
+
+        static ConsentState fromWire(String s) {
+            for (ConsentState c : values()) if (c.wire.equals(s)) return c;
+            throw new IllegalStateException("unknown consent state from mxc_ffi: " + s);
+        }
     }
 
+    /** Administrative telemetry policy. */
+    public enum PolicyState {
+        UNRESTRICTED("unrestricted"),
+        ALLOWED("allowed"),
+        BLOCKED("blocked"),
+        NOT_APPLICABLE("not-applicable");
+
+        private final String wire;
+
+        PolicyState(String wire) {
+            this.wire = wire;
+        }
+
+        public String wire() {
+            return wire;
+        }
+
+        static PolicyState fromWire(String s) {
+            for (PolicyState c : values()) if (c.wire.equals(s)) return c;
+            throw new IllegalStateException("unknown policy state from mxc_ffi: " + s);
+        }
+    }
+
+    /** The effective telemetry consent state. */
+    public static ConsentState telemetryConsent() {
+        return ConsentState.fromWire(telemetryString(Native.TELEMETRY_CONSENT));
+    }
+
+    /** The administrative telemetry policy. */
+    public static PolicyState telemetryPolicy() {
+        return PolicyState.fromWire(telemetryString(Native.TELEMETRY_POLICY));
+    }
+
+    /** Persisted and effective consent/policy snapshot (a JSON object). */
     public static JsonNode telemetryConsentStatus() {
-        return telemetry(Native.TELEMETRY_CONSENT_STATUS);
+        return parse(telemetryString(Native.TELEMETRY_CONSENT_STATUS));
     }
 
-    public static JsonNode telemetryPolicy() {
-        return telemetry(Native.TELEMETRY_POLICY);
-    }
-
+    /** Withdraw any persisted consent; returns the outcome (a JSON object). */
     public static JsonNode telemetryWithdrawConsent() {
-        return telemetry(Native.TELEMETRY_WITHDRAW);
+        return parse(telemetryString(Native.TELEMETRY_WITHDRAW));
     }
 
-    private static JsonNode telemetry(java.lang.invoke.MethodHandle h) {
+    private static String telemetryString(java.lang.invoke.MethodHandle h) {
         try (Arena a = Arena.ofConfined()) {
             MemorySegment out = a.allocate(ValueLayout.ADDRESS);
             int st = Native.callInt(h, out);
             String s = Native.takeString(out.get(ValueLayout.ADDRESS, 0));
-            if (st != 0) throw new MxcException(st, "telemetry operation failed");
-            return parse(s);
+            if (st != 0 || s == null) throw new MxcException(st, "telemetry operation failed");
+            return s;
         }
     }
 

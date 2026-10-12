@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.albertocavalcante</groupId>
+  <artifactId>mxc-java-example-codeinterp</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>mxc-java example: codeinterp</name>
+  <description>A code-interpreter HTTP service for untrusted snippets, built on mxc-java.</description>
+
+  <properties>
+    <maven.compiler.release>22</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <mxc.java.version>0.1.0-SNAPSHOT</mxc.java.version>
+    <mxc.ffi.dir></mxc.ffi.dir>
+  </properties>
+
+  <dependencies>
+    <!-- Install the library first: ./mvnw install -DskipTests (from the repo root). -->
+    <dependency>
+      <groupId>io.github.albertocavalcante</groupId>
+      <artifactId>mxc-java</artifactId>
+      <version>${mxc.java.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.4</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <parameters>true</parameters>
+          <compilerArgs>
+            <arg>-Xlint:all,-restricted</arg>
+            <arg>-Werror</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <argLine>--enable-native-access=ALL-UNNAMED -Dmxc.ffi.path=${mxc.ffi.dir}</argLine>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <version>3.6.0</version>
+        <dependencies>
+          <dependency>
+            <groupId>com.puppycrawl.tools</groupId>
+            <artifactId>checkstyle</artifactId>
+            <version>14.3.0</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <configLocation>${project.basedir}/../../config/checkstyle.xml</configLocation>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
+          <consoleOutput>true</consoleOutput>
+          <failOnViolation>true</failOnViolation>
+          <violationSeverity>error</violationSeverity>
+        </configuration>
+        <executions>
+          <execution>
+            <id>checkstyle</id>
+            <phase>verify</phase>
+            <goals><goal>check</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>mxc-ffi-from-env</id>
+      <activation>
+        <property>
+          <name>env.MXC_FFI_DIR</name>
+        </property>
+      </activation>
+      <properties>
+        <mxc.ffi.dir>${env.MXC_FFI_DIR}</mxc.ffi.dir>
+      </properties>
+    </profile>
+  </profiles>
+</project>

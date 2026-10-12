@@ -121,9 +121,9 @@ sends an explicitly empty environment.
 
 | Platform | Backend | Status |
 |---|---|---|
-| macOS (arm64) | Seatbelt | Tested on JDK 25: run, filesystem enforcement, timeout, streaming, interrupt, PTY |
-| Linux | Bubblewrap, LXC | Untested; builds in CI on a best-effort basis |
-| Windows | ProcessContainer, WSLC, ... | Untested (lifecycle code is written but unverified) |
+| macOS (arm64) | Seatbelt | Tested locally and in CI on JDK 25: run, filesystem enforcement, timeout, streaming, interrupt, PTY, `Cleaner` |
+| Linux (x64) | Bubblewrap | Tested in CI on `ubuntu-latest` (needs `bwrap` and unprivileged user namespaces) |
+| Windows | ProcessContainer, WSLC, ... | CI verifies the library builds, loads through Panama and answers discovery and telemetry. Sandbox execution is not tested (hosted runners cannot initialize a ProcessContainer, and the suite's workloads are POSIX shell) |
 
 Use `Mxc.platformSupport()` and `Mxc.availableBackends()` to check at runtime.
 

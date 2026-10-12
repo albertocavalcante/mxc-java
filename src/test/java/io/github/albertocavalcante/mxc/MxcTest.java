@@ -35,7 +35,7 @@ class MxcTest {
     }
 
     static void need() {
-        Assumptions.assumeTrue(sandbox, "no supported sandbox backend");
+        TestPlatform.needPosixSandbox();
     }
 
     static Request sh(String cmd) {

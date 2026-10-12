@@ -3,7 +3,6 @@ package io.github.albertocavalcante.mxc;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -37,7 +36,7 @@ class CleanerTest {
     @Test
     @Timeout(60)
     void unreachableProcessIsKilledByCleaner() throws Exception {
-        Assumptions.assumeTrue(Mxc.platformSupport().isSupported(), "no sandbox backend");
+        TestPlatform.needPosixSandbox();
         leak();
         Thread.sleep(300);
         assertTrue(markerRunning(), "test setup: the sandboxed sleep should be running");

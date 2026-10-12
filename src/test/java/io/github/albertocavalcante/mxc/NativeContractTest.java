@@ -18,8 +18,14 @@ class NativeContractTest {
     @Test
     void telemetryGettersMatchTheirNativeFormats() {
         // consent and policy are bare strings ("not-applicable", ...), not JSON.
-        assertEquals(Mxc.ConsentState.NOT_APPLICABLE, Mxc.telemetryConsent()); // non-Windows host
-        assertEquals(Mxc.PolicyState.NOT_APPLICABLE, Mxc.telemetryPolicy());
+        if (TestPlatform.windows()) {
+            // Consent applies on Windows, so only the shape is stable there.
+            Mxc.telemetryConsent();
+            Mxc.telemetryPolicy();
+        } else {
+            assertEquals(Mxc.ConsentState.NOT_APPLICABLE, Mxc.telemetryConsent());
+            assertEquals(Mxc.PolicyState.NOT_APPLICABLE, Mxc.telemetryPolicy());
+        }
         // status and withdraw are JSON documents.
         assertTrue(Mxc.telemetryConsentStatus().isObject());
         assertTrue(Mxc.telemetryWithdrawConsent().isObject());
@@ -38,7 +44,7 @@ class NativeContractTest {
 
     @Test
     void oneShotOutputIsLossyButStreamsAreRaw() throws Exception {
-        Assumptions.assumeTrue(Mxc.platformSupport().isSupported(), "no sandbox backend");
+        TestPlatform.needPosixSandbox();
         Request req =
                 Request.of("printf 'a\\000b\\377c'")
                         .withFilesystem(
@@ -98,8 +104,7 @@ class NativeContractTest {
 
     @Test
     void requestConsentIsNotApplicableOffWindows() {
-        Assumptions.assumeFalse(
-                System.getProperty("os.name").toLowerCase().contains("win"), "windows may prompt");
+        Assumptions.assumeFalse(TestPlatform.windows(), "windows may prompt");
         boolean[] called = {false};
         JsonNode out =
                 Mxc.requestConsent(

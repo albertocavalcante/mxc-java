@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -48,7 +47,10 @@ class PropertyTest {
             w = w.withTimeout(Duration.ofMillis(1 + r.nextInt(30_000)));
         }
         Request req = Request.of("true").withProcess(w);
-        if (r.nextBoolean()) {
+        // A backend section must match the selected containment (a cross-field rule MXC
+        // enforces), and Seatbelt is only selectable on macOS.
+        boolean mac = TestPlatform.mac();
+        if (mac && r.nextBoolean()) {
             req = req.withContainment(Request.Containment.SEATBELT);
         }
         if (r.nextBoolean()) {
@@ -108,7 +110,7 @@ class PropertyTest {
         if (r.nextBoolean()) {
             req = req.withTelemetry(new Request.Telemetry(false));
         }
-        if (r.nextBoolean()) {
+        if (mac && r.nextBoolean()) {
             req = req.withSeatbelt(new Request.Seatbelt(null, bool(r), bool(r), bool(r), null));
         }
         if (r.nextBoolean()) {
@@ -119,7 +121,7 @@ class PropertyTest {
 
     @Test
     void typedRequestsAreNeverMalformed() {
-        Assumptions.assumeTrue(Mxc.platformSupport().isSupported(), "no sandbox backend");
+        TestPlatform.needPosixSandbox();
         long seed = System.nanoTime();
         Random r = new Random(seed);
         Map<String, Integer> outcomes = new HashMap<>();

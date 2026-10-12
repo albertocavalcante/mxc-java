@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.albertocavalcante</groupId>
+  <artifactId>mxc-java</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>mxc-java</name>
+  <description>Unofficial JVM binding for MXC (Microsoft eXecution Container) over its native mxc_ffi library, using java.lang.foreign.</description>
+  <url>https://github.com/albertocavalcante/mxc-java</url>
+  <inceptionYear>2026</inceptionYear>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Alberto Cavalcante</name>
+      <url>https://github.com/albertocavalcante</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/albertocavalcante/mxc-java.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/albertocavalcante/mxc-java.git</developerConnection>
+    <url>https://github.com/albertocavalcante/mxc-java</url>
+  </scm>
+
+  <issueManagement>
+    <system>GitHub</system>
+    <url>https://github.com/albertocavalcante/mxc-java/issues</url>
+  </issueManagement>
+
+  <properties>
+    <!-- java.lang.foreign is final in Java 22. -->
+    <maven.compiler.release>22</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+    <!-- Directory containing libmxc_ffi; see README. -->
+    <mxc.ffi.dir>${env.MXC_FFI_DIR}</mxc.ffi.dir>
+    <jackson.version>2.18.2</jackson.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.4</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.6.3</version>
+        <executions>
+          <execution>
+            <id>enforce</id>
+            <goals><goal>enforce</goal></goals>
+            <configuration>
+              <rules>
+                <requireMavenVersion><version>[3.9,)</version></requireMavenVersion>
+                <requireJavaVersion>
+                  <version>[22,)</version>
+                  <message>mxc-java needs JDK 22+ (java.lang.foreign is final from 22).</message>
+                </requireJavaVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <parameters>true</parameters>
+          <showWarnings>true</showWarnings>
+          <compilerArgs>
+            <!-- restricted: java.lang.foreign calls are the point of this library -->
+            <arg>-Xlint:all,-restricted</arg>
+            <arg>-Werror</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <argLine>--enable-native-access=ALL-UNNAMED -Dmxc.ffi.path=${mxc.ffi.dir}</argLine>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <addDefaultEntries>false</addDefaultEntries>
+            </manifest>
+            <manifestEntries>
+              <Automatic-Module-Name>io.github.albertocavalcante.mxc</Automatic-Module-Name>
+              <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- mvn -Prelease deploy: signed sources + javadoc jars and Central Portal publishing.
+         Requires GPG and Central credentials; see CONTRIBUTING.md. -->
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals><goal>jar-no-fork</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.11.2</version>
+            <configuration>
+              <release>22</release>
+              <doclint>all,-missing</doclint>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.7.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>false</autoPublish>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

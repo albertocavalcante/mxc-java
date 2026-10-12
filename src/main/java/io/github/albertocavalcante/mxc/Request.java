@@ -59,6 +59,7 @@ public record Request(
                 containment, process, filesystem, n, ui, telemetry, seatbelt, runtimeConfig, extra);
     }
 
+    /** Returns a copy with the given UI policy. */
     public Request withUi(Ui u) {
         return new Request(
                 containment,
@@ -118,6 +119,7 @@ public record Request(
         return out.toString();
     }
 
+    /** Containment backend selection; leave null for the platform default. */
     public enum Containment {
         PROCESS("process"),
         PROCESS_CONTAINER("processcontainer"),
@@ -138,6 +140,7 @@ public record Request(
         }
     }
 
+    /** Allow or deny decision for network rules. */
     public enum Action {
         ALLOW("allow"),
         DENY("deny");
@@ -153,6 +156,7 @@ public record Request(
         }
     }
 
+    /** Transport protocol of a port rule. */
     public enum Protocol {
         TCP("tcp"),
         UDP("udp"),
@@ -170,6 +174,7 @@ public record Request(
         }
     }
 
+    /** Clipboard access level. */
     public enum Clipboard {
         NONE("none"),
         READ("read"),
@@ -214,20 +219,23 @@ public record Request(
             return new Workload(commandLine, cwd, env, v, timeout);
         }
 
+        /** Sets the timeout (millisecond resolution, at most {@link #MAX_TIMEOUT_MILLIS}). */
         public Workload withTimeout(Duration d) {
-            if (d.compareTo(Duration.ofMillis(MAX_TIMEOUT_MILLIS)) > 0)
+            if (d.compareTo(Duration.ofMillis(MAX_TIMEOUT_MILLIS)) > 0) {
                 throw new IllegalArgumentException(
                         "timeout "
                                 + d
                                 + " exceeds the schema maximum of "
                                 + MAX_TIMEOUT_MILLIS
                                 + " ms");
+            }
             long ms = d.toMillis();
             return new Workload(
                     commandLine, cwd, env, inheritDefaultEnv, d.isZero() ? null : Math.max(1, ms));
         }
     }
 
+    /** Filesystem policy: read-only, read-write and denied paths. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Filesystem(
             List<String> readonlyPaths, List<String> readwritePaths, List<String> deniedPaths) {
@@ -240,6 +248,7 @@ public record Request(
         }
     }
 
+    /** Directional network policy; omitted directions default to deny. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Network(Egress egress, Ingress ingress) {
         public static Network denyAll() {
@@ -248,27 +257,35 @@ public record Request(
         }
     }
 
+    /** Outbound network rules. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Egress(
             @JsonProperty("default") Action defaultAction, List<Rule> allow, List<Rule> deny) {}
 
+    /** Inbound and host-loopback network rules. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Ingress(@JsonProperty("default") Action defaultAction, Action hostLoopback) {}
 
+    /** A network rule: optional destination CIDRs and ports (omission matches all). */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Rule(List<Peer> to, List<Port> ports) {}
 
+    /** A destination CIDR with optional excluded CIDRs. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Peer(String cidr, List<String> except) {}
 
+    /** A destination protocol and port or port range. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Port(Protocol protocol, Integer port, Integer endPort) {}
 
+    /** Cross-platform user-interface policy. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Ui(Clipboard clipboard, Boolean disable, Boolean injection) {}
 
+    /** Opts one run into diagnostic telemetry (still subject to user consent). */
     public record Telemetry(boolean enabled) {}
 
+    /** macOS Seatbelt backend settings. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Seatbelt(
             List<String> extraMachLookups,
@@ -277,6 +294,7 @@ public record Request(
             Boolean nestedPty,
             String profileOverride) {}
 
+    /** Runtime values such as a cooperative network proxy URL. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RuntimeConfig(String networkProxy) {}
 }

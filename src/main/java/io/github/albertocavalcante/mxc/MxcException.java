@@ -10,6 +10,7 @@ public class MxcException extends RuntimeException {
     private final String nativeCode;
     private final String remediation;
 
+    /** Creates an exception with the full native failure detail; any detail may be null. */
     public MxcException(
             int status, String message, String operation, String nativeCode, String remediation) {
         super(
@@ -43,10 +44,14 @@ public class MxcException extends RuntimeException {
                         .append(msg);
         if (op != null) {
             sb.append(" (").append(op);
-            if (nc != null) sb.append(' ').append(nc);
+            if (nc != null) {
+                sb.append(' ').append(nc);
+            }
             sb.append(')');
         }
-        if (rem != null) sb.append(": ").append(rem);
+        if (rem != null) {
+            sb.append(": ").append(rem);
+        }
         return sb.toString();
     }
 

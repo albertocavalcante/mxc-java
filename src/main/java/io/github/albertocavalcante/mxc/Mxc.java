@@ -50,6 +50,7 @@ public final class Mxc {
     public record PlatformSupport(
             boolean isSupported, String reason, List<String> availableMethods) {}
 
+    /** Probes whether this host can launch sandboxes and with which backends. */
     public static PlatformSupport platformSupport() {
         JsonNode n = parse(Native.takeString(Native.callPtr(Native.PLATFORM_SUPPORT)));
         return new PlatformSupport(
@@ -111,11 +112,12 @@ public final class Mxc {
                     out.get(
                             ValueLayout.JAVA_INT,
                             Native.RUN_RESULT.byteOffset(PathElement.groupElement("status")));
-            if (status != 0)
+            if (status != 0) {
                 throw errorFrom(
                         status,
                         out,
                         Native.RUN_RESULT.byteOffset(PathElement.groupElement("error")));
+            }
             int exit =
                     out.get(
                             ValueLayout.JAVA_INT,
@@ -172,6 +174,10 @@ public final class Mxc {
         return spawnJson(request.toJson(), options);
     }
 
+    /**
+     * Spawns a caller-supplied exact-version MXC request JSON (any registered version) as a live
+     * process with piped stdio. Rejects documents containing a NUL byte.
+     */
     public static MxcProcess spawnJson(String requestJson, Options options) {
         checkJson(requestJson);
         try (Arena a = Arena.ofConfined()) {
@@ -209,7 +215,9 @@ public final class Mxc {
     static MxcProcess finishSpawn(int status, MemorySegment handleOut, MemorySegment err) {
         try {
             MemorySegment h = handleOut.get(ValueLayout.ADDRESS, 0);
-            if (status != 0 || Native.isNull(h)) throw errorFrom(status, err, 0);
+            if (status != 0 || Native.isNull(h)) {
+                throw errorFrom(status, err, 0);
+            }
             return new MxcProcess(h);
         } finally {
             Native.call(Native.ERROR_DETAIL_FREE, err);
@@ -266,10 +274,11 @@ public final class Mxc {
     public static String provision(Map<String, Object> body, Options options) {
         JsonNode resp = lifecycle("provision", null, body, false, options);
         String id = resp.path("result").path("sandboxId").asText(null);
-        if (id == null)
+        if (id == null) {
             throw new MxcException(
                     ErrorCode.BACKEND_ERROR.status(),
                     "provision response carried no sandboxId: " + resp);
+        }
         return id;
     }
 
@@ -296,13 +305,20 @@ public final class Mxc {
         ObjectNode env = JSON.createObjectNode();
         env.put("version", Request.SCHEMA_VERSION);
         env.put("phase", phase);
-        if (sandboxId != null) env.put("sandboxId", sandboxId);
-        if (body != null) env.setAll((ObjectNode) JSON.valueToTree(body));
+        if (sandboxId != null) {
+            env.put("sandboxId", sandboxId);
+        }
+        if (body != null) {
+            env.setAll((ObjectNode) JSON.valueToTree(body));
+        }
         // Reserved envelope keys always win over caller-supplied body fields.
         env.put("version", Request.SCHEMA_VERSION);
         env.put("phase", phase);
-        if (sandboxId != null) env.put("sandboxId", sandboxId);
-        else env.remove("sandboxId");
+        if (sandboxId != null) {
+            env.put("sandboxId", sandboxId);
+        } else {
+            env.remove("sandboxId");
+        }
         try (Arena a = Arena.ofConfined()) {
             MemorySegment out = a.allocate(Native.STATE_RESULT);
             int st =
@@ -313,11 +329,12 @@ public final class Mxc {
                             o.experimental() ? 1 : 0,
                             out);
             try {
-                if (st != 0)
+                if (st != 0) {
                     throw errorFrom(
                             st,
                             out,
                             Native.STATE_RESULT.byteOffset(PathElement.groupElement("error")));
+                }
                 String resp =
                         Native.cString(
                                 Native.ptrAt(
@@ -391,7 +408,11 @@ public final class Mxc {
         }
 
         static ConsentState fromWire(String s) {
-            for (ConsentState c : values()) if (c.wire.equals(s)) return c;
+            for (ConsentState c : values()) {
+                if (c.wire.equals(s)) {
+                    return c;
+                }
+            }
             throw new IllegalStateException("unknown consent state from mxc_ffi: " + s);
         }
     }
@@ -414,7 +435,11 @@ public final class Mxc {
         }
 
         static PolicyState fromWire(String s) {
-            for (PolicyState c : values()) if (c.wire.equals(s)) return c;
+            for (PolicyState c : values()) {
+                if (c.wire.equals(s)) {
+                    return c;
+                }
+            }
             throw new IllegalStateException("unknown policy state from mxc_ffi: " + s);
         }
     }
@@ -444,7 +469,9 @@ public final class Mxc {
             MemorySegment out = a.allocate(ValueLayout.ADDRESS);
             int st = Native.callInt(h, out);
             String s = Native.takeString(out.get(ValueLayout.ADDRESS, 0));
-            if (st != 0 || s == null) throw new MxcException(st, "telemetry operation failed");
+            if (st != 0 || s == null) {
+                throw new MxcException(st, "telemetry operation failed");
+            }
             return s;
         }
     }

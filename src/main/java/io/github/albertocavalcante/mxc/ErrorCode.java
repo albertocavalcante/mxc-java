@@ -30,8 +30,13 @@ public enum ErrorCode {
         return status;
     }
 
+    /** Maps a native status code to its {@code ErrorCode}, or {@link #UNKNOWN}. */
     public static ErrorCode fromStatus(int status) {
-        for (ErrorCode c : values()) if (c.status == status) return c;
+        for (ErrorCode c : values()) {
+            if (c.status == status) {
+                return c;
+            }
+        }
         return UNKNOWN;
     }
 }

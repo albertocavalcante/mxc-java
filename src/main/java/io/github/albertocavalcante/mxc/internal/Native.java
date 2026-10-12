@@ -62,8 +62,12 @@ public final class Native {
 
     private static String libFile() {
         String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
-        if (os.contains("win")) return "mxc_ffi.dll";
-        if (os.contains("mac")) return "libmxc_ffi.dylib";
+        if (os.contains("win")) {
+            return "mxc_ffi.dll";
+        }
+        if (os.contains("mac")) {
+            return "libmxc_ffi.dylib";
+        }
         return "libmxc_ffi.so";
     }
 
@@ -83,10 +87,14 @@ public final class Native {
         String file = libFile();
         Arena global = Arena.global();
         String prop = System.getProperty("mxc.ffi.path");
-        if (unset(prop)) prop = System.getenv("MXC_FFI_DIR");
+        if (unset(prop)) {
+            prop = System.getenv("MXC_FFI_DIR");
+        }
         if (!unset(prop)) {
             Path p = Path.of(prop);
-            if (Files.isDirectory(p)) p = p.resolve(file);
+            if (Files.isDirectory(p)) {
+                p = p.resolve(file);
+            }
             if (!Files.isRegularFile(p)) {
                 throw new UnsatisfiedLinkError(
                         "mxc_ffi not found at "
@@ -245,10 +253,14 @@ public final class Native {
      * U+FFFD), so one-shot capture is not binary-safe; the streaming API carries raw bytes.
      */
     public static byte[] cBytes(MemorySegment p) {
-        if (isNull(p)) return null;
+        if (isNull(p)) {
+            return null;
+        }
         MemorySegment all = p.reinterpret(Long.MAX_VALUE);
         long n = 0;
-        while (all.get(ValueLayout.JAVA_BYTE, n) != 0) n++;
+        while (all.get(ValueLayout.JAVA_BYTE, n) != 0) {
+            n++;
+        }
         return all.asSlice(0, n).toArray(ValueLayout.JAVA_BYTE);
     }
 
@@ -259,7 +271,9 @@ public final class Native {
 
     /** Free a library-owned heap string and return its contents. */
     public static String takeString(MemorySegment p) {
-        if (isNull(p)) return null;
+        if (isNull(p)) {
+            return null;
+        }
         String s = cString(p);
         call(STRING_FREE, p);
         return s;

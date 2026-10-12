@@ -29,7 +29,11 @@ public final class MxcProcess implements AutoCloseable {
 
     MxcProcess(MemorySegment handle) {
         this.handle = handle;
-        MemorySegment in, out, err, outCloser, errCloser;
+        MemorySegment in;
+        MemorySegment out;
+        MemorySegment err;
+        MemorySegment outCloser;
+        MemorySegment errCloser;
         try {
             in = Native.callPtr(Native.TAKE_STDIN, handle);
             out = Native.callPtr(Native.TAKE_STDOUT, handle);
@@ -70,6 +74,7 @@ public final class MxcProcess implements AutoCloseable {
         return stderr;
     }
 
+    /** The native process id, or 0 once the process has been closed. */
     public long pid() {
         lock.lock();
         try {
@@ -79,10 +84,13 @@ public final class MxcProcess implements AutoCloseable {
         }
     }
 
+    /** Security warnings raised at launch (for example a relaxed policy); empty if none. */
     public List<String> warnings() {
         lock.lock();
         try {
-            if (closed) return List.of();
+            if (closed) {
+                return List.of();
+            }
             try (Arena a = Arena.ofConfined()) {
                 MemorySegment o = a.allocate(ValueLayout.ADDRESS);
                 Native.callInt(Native.SANDBOX_WARNINGS, handle, o);
@@ -100,7 +108,9 @@ public final class MxcProcess implements AutoCloseable {
         try {
             ensureOpen();
             int st = Native.callInt(Native.PTY_RESIZE, handle, (short) rows, (short) cols);
-            if (st != 0) throw new MxcException(st, "pty resize failed");
+            if (st != 0) {
+                throw new MxcException(st, "pty resize failed");
+            }
         } finally {
             lock.unlock();
         }
@@ -112,29 +122,39 @@ public final class MxcProcess implements AutoCloseable {
         try {
             ensureOpen();
             int st = Native.callInt(Native.KILL, handle);
-            if (st != 0) throw new MxcException(st, "kill failed");
+            if (st != 0) {
+                throw new MxcException(st, "kill failed");
+            }
         } finally {
             lock.unlock();
         }
     }
 
     private void ensureOpen() {
-        if (closed) throw new IllegalStateException("mxc process is closed");
+        if (closed) {
+            throw new IllegalStateException("mxc process is closed");
+        }
     }
 
     /** Poll once. Returns the exit status if the process has exited, else null. */
     public Result poll() {
         lock.lock();
         try {
-            if (exited != null) return exited;
+            if (exited != null) {
+                return exited;
+            }
             ensureOpen();
             try (Arena a = Arena.ofConfined()) {
-                MemorySegment e = a.allocate(ValueLayout.JAVA_INT),
-                        r = a.allocate(ValueLayout.JAVA_INT),
-                        t = a.allocate(ValueLayout.JAVA_INT);
+                MemorySegment e = a.allocate(ValueLayout.JAVA_INT);
+                MemorySegment r = a.allocate(ValueLayout.JAVA_INT);
+                MemorySegment t = a.allocate(ValueLayout.JAVA_INT);
                 int st = Native.callInt(Native.TRY_WAIT, handle, e, r, t);
-                if (st != 0) throw new MxcException(st, "wait failed");
-                if (r.get(ValueLayout.JAVA_INT, 0) != 0) return null;
+                if (st != 0) {
+                    throw new MxcException(st, "wait failed");
+                }
+                if (r.get(ValueLayout.JAVA_INT, 0) != 0) {
+                    return null;
+                }
                 exited =
                         new Result(
                                 e.get(ValueLayout.JAVA_INT, 0),
@@ -159,7 +179,9 @@ public final class MxcProcess implements AutoCloseable {
         long delayMs = 1;
         while (true) {
             Result r = poll();
-            if (r != null) return r;
+            if (r != null) {
+                return r;
+            }
             try {
                 Thread.sleep(delayMs);
             } catch (InterruptedException ie) {
@@ -177,7 +199,9 @@ public final class MxcProcess implements AutoCloseable {
                 Thread.currentThread().interrupt();
                 throw ie;
             }
-            if (delayMs < 25) delayMs *= 2;
+            if (delayMs < 25) {
+                delayMs *= 2;
+            }
         }
     }
 
@@ -185,10 +209,13 @@ public final class MxcProcess implements AutoCloseable {
     public Result output() throws InterruptedException {
         // Nothing is supplied on stdin here; close it so children such as `cat` see EOF.
         try {
-            if (stdin != null) stdin.close();
+            if (stdin != null) {
+                stdin.close();
+            }
         } catch (IOException ignored) {
         }
-        ByteArrayOutputStream so = new ByteArrayOutputStream(), se = new ByteArrayOutputStream();
+        ByteArrayOutputStream so = new ByteArrayOutputStream();
+        ByteArrayOutputStream se = new ByteArrayOutputStream();
         // Platform threads: the drains block inside native downcalls, which would pin virtual
         // threads.
         Thread t1 = Thread.ofPlatform().daemon().start(() -> drain(stdout, so));
@@ -221,7 +248,9 @@ public final class MxcProcess implements AutoCloseable {
     private static final long DRAIN_GRACE_NANOS = 500_000_000L;
 
     private static void drain(InputStream in, ByteArrayOutputStream sink) {
-        if (in == null) return;
+        if (in == null) {
+            return;
+        }
         try {
             in.transferTo(sink);
         } catch (IOException ignored) {
@@ -232,7 +261,9 @@ public final class MxcProcess implements AutoCloseable {
     private String metadata() {
         lock.lock();
         try {
-            if (closed) return null;
+            if (closed) {
+                return null;
+            }
             try (Arena a = Arena.ofConfined()) {
                 MemorySegment o = a.allocate(ValueLayout.ADDRESS);
                 Native.callInt(Native.SANDBOX_METADATA, handle, o);
@@ -245,11 +276,17 @@ public final class MxcProcess implements AutoCloseable {
 
     private void closeStreams() {
         try {
-            if (stdin != null) stdin.close();
+            if (stdin != null) {
+                stdin.close();
+            }
         } catch (IOException ignored) {
         }
-        if (stdout != null) stdout.close();
-        if (stderr != null) stderr.close();
+        if (stdout != null) {
+            stdout.close();
+        }
+        if (stderr != null) {
+            stderr.close();
+        }
     }
 
     /** Release the process; kills the tree if still running. Idempotent. */
@@ -271,7 +308,9 @@ public final class MxcProcess implements AutoCloseable {
         closeStreams();
         lock.lock();
         try {
-            if (closed) return;
+            if (closed) {
+                return;
+            }
             closed = true;
             Native.call(Native.SANDBOX_FREE, handle);
             handle = MemorySegment.NULL;
@@ -303,17 +342,26 @@ public final class MxcProcess implements AutoCloseable {
         @Override
         public int read(byte[] b, int off, int len) throws IOException {
             java.util.Objects.checkFromIndexSize(off, len, b.length);
-            if (len == 0) return 0;
+            if (len == 0) {
+                return 0;
+            }
             rl.lock();
             try {
-                if (Native.isNull(stream)) return -1;
+                if (Native.isNull(stream)) {
+                    return -1;
+                }
                 int cap = Math.min(len, 64 * 1024);
                 try (Arena a = Arena.ofConfined()) {
-                    MemorySegment buf = a.allocate(cap), n = a.allocate(ValueLayout.JAVA_LONG);
+                    MemorySegment buf = a.allocate(cap);
+                    MemorySegment n = a.allocate(ValueLayout.JAVA_LONG);
                     int st = Native.callInt(Native.STREAM_READ, stream, buf, (long) cap, n);
-                    if (st != 0) throw new IOException(new MxcException(st, "stream read failed"));
+                    if (st != 0) {
+                        throw new IOException(new MxcException(st, "stream read failed"));
+                    }
                     long got = n.get(ValueLayout.JAVA_LONG, 0);
-                    if (got == 0) return -1;
+                    if (got == 0) {
+                        return -1;
+                    }
                     MemorySegment.copy(buf, ValueLayout.JAVA_BYTE, 0, b, off, (int) got);
                     return (int) got;
                 }
@@ -326,11 +374,14 @@ public final class MxcProcess implements AutoCloseable {
         @Override
         public void close() {
             synchronized (this) {
-                if (closeStarted) return;
+                if (closeStarted) {
+                    return;
+                }
                 closeStarted = true;
             }
-            if (!Native.isNull(closer))
+            if (!Native.isNull(closer)) {
                 Native.call(Native.CLOSER_CLOSE, closer); // not guarded by rl
+            }
             rl.lock();
             try {
                 if (!Native.isNull(stream)) {
@@ -365,10 +416,12 @@ public final class MxcProcess implements AutoCloseable {
             java.util.Objects.checkFromIndexSize(off, len, b.length);
             wl.lock();
             try {
-                if (Native.isNull(stream)) throw new IOException("stdin closed");
+                if (Native.isNull(stream)) {
+                    throw new IOException("stdin closed");
+                }
                 try (Arena a = Arena.ofConfined()) {
-                    MemorySegment buf = a.allocate(Math.max(len, 1)),
-                            n = a.allocate(ValueLayout.JAVA_LONG);
+                    MemorySegment buf = a.allocate(Math.max(len, 1));
+                    MemorySegment n = a.allocate(ValueLayout.JAVA_LONG);
                     MemorySegment.copy(b, off, buf, ValueLayout.JAVA_BYTE, 0, len);
                     int done = 0;
                     while (done < len) {
@@ -379,10 +432,13 @@ public final class MxcProcess implements AutoCloseable {
                                         buf.asSlice(done),
                                         (long) (len - done),
                                         n);
-                        if (st != 0)
+                        if (st != 0) {
                             throw new IOException(new MxcException(st, "stream write failed"));
+                        }
                         long w = n.get(ValueLayout.JAVA_LONG, 0);
-                        if (w == 0) throw new IOException("short write");
+                        if (w == 0) {
+                            throw new IOException("short write");
+                        }
                         done += (int) w;
                     }
                 }
@@ -395,9 +451,13 @@ public final class MxcProcess implements AutoCloseable {
         public void flush() throws IOException {
             wl.lock();
             try {
-                if (Native.isNull(stream)) return;
+                if (Native.isNull(stream)) {
+                    return;
+                }
                 int st = Native.callInt(Native.STREAM_FLUSH, stream);
-                if (st != 0) throw new IOException(new MxcException(st, "stream flush failed"));
+                if (st != 0) {
+                    throw new IOException(new MxcException(st, "stream flush failed"));
+                }
             } finally {
                 wl.unlock();
             }
@@ -407,7 +467,9 @@ public final class MxcProcess implements AutoCloseable {
         public void close() throws IOException {
             wl.lock();
             try {
-                if (Native.isNull(stream)) return;
+                if (Native.isNull(stream)) {
+                    return;
+                }
                 Native.call(Native.WRITE_STREAM_FREE, stream);
                 stream = MemorySegment.NULL;
             } finally {

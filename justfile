@@ -42,6 +42,14 @@ examples:
     ./mvnw -B -q install -DskipTests -Dcheckstyle.skip
     ./mvnw -B -f examples/codeinterp/pom.xml verify
 
+# Run the codeinterp example service (Ctrl-C to stop).
+serve addr="127.0.0.1:8080":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ./mvnw -B -q install -DskipTests -Dcheckstyle.skip
+    ./mvnw -B -q -f examples/codeinterp/pom.xml compile dependency:build-classpath -Dmdep.outputFile=target/cp.txt
+    exec java --enable-native-access=ALL-UNNAMED -cp "examples/codeinterp/target/classes:$(cat examples/codeinterp/target/cp.txt)" codeinterp.Server --addr {{ addr }}
+
 # Checkstyle: star/unused imports, braces, naming, public-API Javadoc.
 lint:
     ./mvnw -B -q checkstyle:check@checkstyle

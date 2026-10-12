@@ -7,14 +7,13 @@
 
 ```sh
 just native && export MXC_FFI_DIR="$PWD/.mxc/src/target/release"
-./mvnw install -DskipTests                                    # install the library
-./mvnw -f examples/codeinterp/pom.xml -q compile exec:java -Dexec.mainClass=codeinterp.Server   # or run Server.main from your IDE
+just serve                                   # builds the library + example, listens on 127.0.0.1:8080
 curl -s localhost:8080/v1/run -d '{"language":"python","code":"print(sum(range(10)))"}'
 curl -sN localhost:8080/v1/run/stream -d '{"language":"sh","code":"echo one; sleep 1; echo two"}'
 ```
 
-(`Server.main` takes `--addr host:port`, `--work dir`, `--deny a,b`. Run the JVM with
-`--enable-native-access=ALL-UNNAMED`.)
+(`just serve` runs `codeinterp.Server`, which takes `--addr host:port`, `--work dir`
+and `--deny a,b`; run your own JVM with `--enable-native-access=ALL-UNNAMED`.)
 
 ## `codeinterp`: what the policy does
 

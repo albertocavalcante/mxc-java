@@ -1,4 +1,4 @@
-/target/
+target/
 /.mxc/
 *.class
 .idea/

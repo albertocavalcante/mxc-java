@@ -37,6 +37,11 @@ fmt:
 fmt-check:
     ./scripts/gjf.sh check
 
+# Build and test the example modules (installs the library into ~/.m2 first).
+examples:
+    ./mvnw -B -q install -DskipTests -Dcheckstyle.skip
+    ./mvnw -B -f examples/codeinterp/pom.xml verify
+
 # Checkstyle: star/unused imports, braces, naming, public-API Javadoc.
 lint:
     ./mvnw -B -q checkstyle:check@checkstyle
@@ -49,7 +54,7 @@ javadoc:
 abi-check:
     ./scripts/abi-check.sh "$MXC_FFI_DIR"
 
-ci: fmt-check verify javadoc abi-check
+ci: fmt-check verify javadoc abi-check examples
 
 # Point git at the repo's hooks (lefthook).
 hooks:

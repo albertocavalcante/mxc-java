@@ -17,7 +17,7 @@ if [ ! -f "$jar" ]; then
 fi
 
 files=()
-while IFS= read -r f; do files+=("$f"); done < <(find "$here/src" -name '*.java' | sort)
+while IFS= read -r f; do files+=("$f"); done < <(find "$here/src" "$here"/examples/*/src -name '*.java' | sort)
 
 case "${1:?usage: gjf.sh check|apply}" in
   apply) java -jar "$jar" --aosp --replace "${files[@]}" ;;

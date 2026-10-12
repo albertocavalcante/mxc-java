@@ -108,7 +108,20 @@ public final class Native {
         } catch (IOException e) {
             throw new IllegalStateException("failed to extract bundled mxc_ffi", e);
         }
-        return SymbolLookup.libraryLookup(file, global);
+        try {
+            return SymbolLookup.libraryLookup(file, global);
+        } catch (IllegalArgumentException e) {
+            throw new UnsatisfiedLinkError(
+                    "mxc_ffi ("
+                            + file
+                            + ") not found. Set MXC_FFI_DIR or -Dmxc.ffi.path to the directory"
+                            + " holding it, bundle it as META-INF/native/"
+                            + platformDir()
+                            + "/"
+                            + file
+                            + ", or put it on the loader path. Build it from microsoft/mxc with"
+                            + " `cargo build --release -p mxc_ffi`.");
+        }
     }
 
     private static MethodHandle fn(String name, FunctionDescriptor fd) {

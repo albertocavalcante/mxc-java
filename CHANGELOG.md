@@ -8,6 +8,8 @@ commit it was tested against.
 
 ## Unreleased
 
+- Example: `codeinterp` service module with a hostile test suite, built and tested by `just ci`.
+
 - Telemetry consent flow: `telemetryNeedsConsentPrompt` and `requestConsent` with a
   throw-safe presenter (a Panama upcall).
 - A `Cleaner` reclaims an `MxcProcess` that is dropped without `close()`.

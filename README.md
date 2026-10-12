@@ -117,6 +117,13 @@ sends an explicitly empty environment.
   `cidr`, ...) are enforced by MXC natively and surface as a `MALFORMED_REQUEST`
   or `POLICY_VALIDATION` exception rather than being duplicated here.
 
+## Examples
+
+[`examples/`](examples) has a code-interpreter HTTP service (`codeinterp`) with a
+hostile-snippet test suite that attacks the sandbox (secret reads, symlink
+escapes, network exfiltration, fork storms, output floods) and checks every
+attack fails.
+
 ## Platform support
 
 | Platform | Backend | Status |

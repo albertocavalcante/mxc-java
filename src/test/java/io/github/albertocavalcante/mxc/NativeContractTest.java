@@ -1,8 +1,11 @@
 package io.github.albertocavalcante.mxc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.databind.JsonNode;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -48,5 +51,67 @@ class NativeContractTest {
             byte[] raw = p.stdout().readAllBytes();
             assertEquals("a\u0000bÿc", new String(raw, StandardCharsets.ISO_8859_1));
         }
+    }
+
+    @Test
+    void presenterDispatchNeverThrows() {
+        String prompt =
+                "{\"resourceVersion\":\"1\",\"locale\":\"en-US\",\"title\":{\"id\":\"t\",\"text\":\"T\"},"
+                    + "\"body\":{\"id\":\"b\",\"text\":\"B\"},\"affirmativeLabel\":{\"id\":\"y\",\"text\":\"Y\"},"
+                    + "\"negativeLabel\":{\"id\":\"n\",\"text\":\"N\"},\"learnMoreLabel\":{\"id\":\"l\",\"text\":\"L\"},"
+                    + "\"learnMoreUrl\":\"https://example.com\",\"futureField\":1}";
+        assertEquals(1, Mxc.dispatchPresenter(p -> ConsentDecision.YES, prompt));
+        assertEquals(0, Mxc.dispatchPresenter(p -> ConsentDecision.NO, prompt));
+        assertEquals(2, Mxc.dispatchPresenter(p -> ConsentDecision.DISMISSED, prompt));
+        assertEquals(-1, Mxc.dispatchPresenter(p -> null, prompt));
+        assertEquals(
+                -1,
+                Mxc.dispatchPresenter(
+                        p -> {
+                            throw new IllegalStateException("boom");
+                        },
+                        prompt));
+        assertEquals(
+                -1,
+                Mxc.dispatchPresenter(
+                        p -> {
+                            throw new StackOverflowError();
+                        },
+                        prompt));
+        assertEquals(-1, Mxc.dispatchPresenter(p -> ConsentDecision.YES, "not json"));
+        assertEquals(
+                "Y",
+                seen(prompt).affirmativeLabel().text(),
+                "prompt JSON must map onto ConsentPrompt");
+    }
+
+    private static ConsentPrompt seen(String prompt) {
+        ConsentPrompt[] box = new ConsentPrompt[1];
+        Mxc.dispatchPresenter(
+                p -> {
+                    box[0] = p;
+                    return ConsentDecision.NO;
+                },
+                prompt);
+        return box[0];
+    }
+
+    @Test
+    void requestConsentIsNotApplicableOffWindows() {
+        Assumptions.assumeFalse(
+                System.getProperty("os.name").toLowerCase().contains("win"), "windows may prompt");
+        boolean[] called = {false};
+        JsonNode out =
+                Mxc.requestConsent(
+                        "en-US",
+                        p -> {
+                            called[0] = true;
+                            return ConsentDecision.NO;
+                        });
+        assertTrue(out.isObject());
+        assertEquals("notApplicable", out.get("result").asText());
+        assertFalse(called[0], "presenter must not run where consent is not applicable");
+        assertFalse(Mxc.telemetryNeedsConsentPrompt());
+        assertThrows(NullPointerException.class, () -> Mxc.requestConsent(null, null));
     }
 }

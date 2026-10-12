@@ -8,9 +8,13 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.albertocavalcante.mxc.internal.Native;
 
 import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.MemoryLayout.PathElement;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +28,12 @@ import java.util.concurrent.CompletableFuture;
 public final class Mxc {
     private Mxc() {}
 
-    static final ObjectMapper JSON = new ObjectMapper();
+    static final ObjectMapper JSON =
+            new ObjectMapper()
+                    .configure(
+                            com.fasterxml.jackson.databind.DeserializationFeature
+                                    .FAIL_ON_UNKNOWN_PROPERTIES,
+                            false);
 
     /** Options for launch calls. */
     public record Options(boolean experimental, short rows, short cols) {
@@ -464,7 +473,90 @@ public final class Mxc {
         return parse(telemetryString(Native.TELEMETRY_WITHDRAW));
     }
 
-    private static String telemetryString(java.lang.invoke.MethodHandle h) {
+    /** Whether the host should show the telemetry consent prompt. */
+    public static boolean telemetryNeedsConsentPrompt() {
+        try (Arena a = Arena.ofConfined()) {
+            MemorySegment out = a.allocate(ValueLayout.JAVA_INT);
+            int st = Native.callInt(Native.TELEMETRY_NEEDS_PROMPT, out);
+            if (st != 0) {
+                throw new MxcException(st, "telemetry needs-prompt failed");
+            }
+            return out.get(ValueLayout.JAVA_INT, 0) != 0;
+        }
+    }
+
+    /**
+     * Runs the telemetry consent flow, calling {@code presenter} only when a prompt is needed.
+     * Returns the outcome as a JSON object; on non-Windows hosts it reports {@code notApplicable}
+     * without calling the presenter.
+     *
+     * @param locale preferred locale such as {@code en-US}, or null for the default
+     * @param presenter shows the prompt
+     */
+    public static JsonNode requestConsent(String locale, ConsentPresenter presenter) {
+        java.util.Objects.requireNonNull(presenter, "presenter");
+        try (Arena a = Arena.ofConfined()) {
+            MethodHandle entry;
+            try {
+                entry =
+                        MethodHandles.lookup()
+                                .findStatic(
+                                        Mxc.class,
+                                        "presenterEntry",
+                                        MethodType.methodType(
+                                                int.class,
+                                                ConsentPresenter.class,
+                                                MemorySegment.class,
+                                                MemorySegment.class));
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+            MemorySegment stub =
+                    Native.upcall(
+                            MethodHandles.insertArguments(entry, 0, presenter),
+                            FunctionDescriptor.of(
+                                    ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS),
+                            a);
+            MemorySegment out = a.allocate(ValueLayout.ADDRESS);
+            int st =
+                    Native.callInt(
+                            Native.TELEMETRY_REQUEST_CONSENT,
+                            locale == null ? MemorySegment.NULL : a.allocateFrom(locale),
+                            stub,
+                            MemorySegment.NULL,
+                            out);
+            String json = Native.takeString(out.get(ValueLayout.ADDRESS, 0));
+            if (st != 0 || json == null) {
+                throw new MxcException(st, "telemetry consent request failed");
+            }
+            return parse(json);
+        }
+    }
+
+    /** Upcall target. Never throws: an exception must not unwind into native code. */
+    @SuppressWarnings("unused") // invoked reflectively through a method handle
+    private static int presenterEntry(
+            ConsentPresenter presenter, MemorySegment prompt, MemorySegment context) {
+        if (Native.isNull(prompt)) {
+            return PRESENTER_ERROR;
+        }
+        return dispatchPresenter(presenter, Native.cString(prompt));
+    }
+
+    static final int PRESENTER_ERROR = -1;
+
+    /** Runs the presenter and maps every outcome, including any Throwable, to a wire value. */
+    static int dispatchPresenter(ConsentPresenter presenter, String promptJson) {
+        try {
+            ConsentPrompt prompt = JSON.readValue(promptJson, ConsentPrompt.class);
+            ConsentDecision d = presenter.present(prompt);
+            return d == null ? PRESENTER_ERROR : d.wire();
+        } catch (Throwable t) {
+            return PRESENTER_ERROR;
+        }
+    }
+
+    private static String telemetryString(MethodHandle h) {
         try (Arena a = Arena.ofConfined()) {
             MemorySegment out = a.allocate(ValueLayout.ADDRESS);
             int st = Native.callInt(h, out);

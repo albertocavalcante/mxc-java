@@ -219,10 +219,19 @@ public final class Native {
             fn("mxc_telemetry_get_consent_status", of(JAVA_INT, ADDRESS));
     public static final MethodHandle TELEMETRY_POLICY =
             fn("mxc_telemetry_get_policy", of(JAVA_INT, ADDRESS));
+    public static final MethodHandle TELEMETRY_NEEDS_PROMPT =
+            fn("mxc_telemetry_needs_consent_prompt", of(JAVA_INT, ADDRESS));
+    public static final MethodHandle TELEMETRY_REQUEST_CONSENT =
+            fn("mxc_telemetry_request_consent", of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS, ADDRESS));
     public static final MethodHandle TELEMETRY_WITHDRAW =
             fn("mxc_telemetry_withdraw_consent", of(JAVA_INT, ADDRESS));
 
     // ---- helpers -----------------------------------------------------------
+
+    /** Creates a C function pointer for {@code target} with the given descriptor. */
+    public static MemorySegment upcall(MethodHandle target, FunctionDescriptor fd, Arena arena) {
+        return LINKER.upcallStub(target, fd, arena);
+    }
 
     /** Invoke a handle, converting checked Throwables into unchecked ones. */
     public static Object call(MethodHandle h, Object... args) {

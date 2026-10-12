@@ -26,7 +26,8 @@ hook rejects anything else; CI checks every commit in a PR.
 
 ## Style
 
-google-java-format (AOSP) via `just fmt`; the build compiles with
+google-java-format (AOSP) via `just fmt`, plus Checkstyle via `just lint` (star imports
+banned, braces required, public API documented); the build compiles with
 `-Xlint:all -Werror`. Keep Panama code confined to `internal/Native.java`; the
 public API must never expose a `MemorySegment`.
 

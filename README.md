@@ -35,8 +35,10 @@ System.out.println(r.exitCode() + " " + r.stdoutString());
   tree. `runAsync` runs on a virtual thread.
 - Persistent-container lifecycle (`provision`, `start`, `exec`, `spawnExec`,
   `stop`, `deprovision`, `validate`; WSLC and IsolationSession on Windows hosts).
-- Backend discovery, telemetry consent, and structured `MxcException` with an
+- Backend discovery, telemetry consent (including the `requestConsent` prompt
+  flow with a throw-safe presenter), and structured `MxcException` with an
   `ErrorCode`, failing operation, native status and remediation.
+- A forgotten `close()` is not fatal: a `Cleaner` kills and reclaims the process.
 
 ## Requirements
 
@@ -102,6 +104,19 @@ or `MxcProcess.waitFor`: interrupting the thread kills the workload and rethrows
 `Workload.env == null` selects the backend's default environment; an empty list
 sends an explicitly empty environment.
 
+## Behavior notes
+
+- `run` output is decoded lossily by the native layer (invalid UTF-8 and NUL
+  become U+FFFD). Use `spawn` and read the streams for raw bytes.
+- `Result.exitCode()` is `-1` when the workload did not exit normally (timeout or
+  killed by a signal).
+- Closing a PTY process's stdin sends the terminal EOF character, which the
+  terminal echoes as `^D`; `output()` closes stdin first, so PTY output from it
+  may begin with it.
+- Cross-field rules (an ICMP rule has no port, an `except` CIDR lies inside its
+  `cidr`, ...) are enforced by MXC natively and surface as a `MALFORMED_REQUEST`
+  or `POLICY_VALIDATION` exception rather than being duplicated here.
+
 ## Platform support
 
 | Platform | Backend | Status |
@@ -111,6 +126,21 @@ sends an explicitly empty environment.
 | Windows | ProcessContainer, WSLC, ... | Untested (lifecycle code is written but unverified) |
 
 Use `Mxc.platformSupport()` and `Mxc.availableBackends()` to check at runtime.
+
+## Verification
+
+Beyond unit tests:
+
+- **Formal model.** The close protocol (handle lock, stream locks held across
+  blocking I/O, `kill`/`wait`, `Cleaner`) is modeled in TLA+ and exhaustively
+  checked by TLC in CI; see
+  [mxc-go/formal](https://github.com/albertocavalcante/mxc-go/tree/main/formal).
+  `MxcProcess` follows the same design (kill first, then streams, then the
+  handle), and `CleanerTest` exercises the safety net against the real library.
+- **Property test** (`PropertyTest`): random requests built through the typed API
+  are never rejected by MXC's strict contract parser as malformed.
+- **ABI check**: every C function bound in `Native.java` must be exported by the
+  pinned native library.
 
 ## Stability
 
@@ -123,9 +153,10 @@ in CI). On upgrades, re-diff `internal/Native.java` against MXC's
 ## Development
 
 ```sh
-just native && just ci     # fmt-check, verify (compile -Xlint -Werror + tests), javadoc, ABI check
+just native && just ci     # fmt-check, verify (compile -Xlint -Werror, tests, Checkstyle), javadoc, ABI check
 just hooks                 # install lefthook git hooks
 just fmt                   # google-java-format (AOSP), checksum-pinned
+just lint                  # Checkstyle: no star imports, braces required, public API documented
 ```
 
 Commits must follow [Conventional Commits](https://www.conventionalcommits.org/)

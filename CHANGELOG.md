@@ -8,6 +8,13 @@ commit it was tested against.
 
 ## Unreleased
 
+- Telemetry consent flow: `telemetryNeedsConsentPrompt` and `requestConsent` with a
+  throw-safe presenter (a Panama upcall).
+- A `Cleaner` reclaims an `MxcProcess` that is dropped without `close()`.
+- Checkstyle in `verify` and the pre-commit hook: star imports are banned, braces
+  are required, public API must be documented.
+- Typed-request property test against the native parser.
+
 Initial implementation, tested against MXC `c6f301d` (see `MXC_REF`) on JDK 25:
 
 - Typed `1.0.0` request model, `Mxc.run`, `runJson`, `runAsync`, `spawn`,

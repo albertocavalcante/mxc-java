@@ -31,6 +31,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: enable Bubblewrap (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+          bwrap --ro-bind / / --unshare-user true && echo "bubblewrap works"
+
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -53,3 +63,37 @@ jobs:
 
       - name: ci gate
         run: just ci
+
+  # Experimental: proves libmxc_ffi.dll builds and loads through Panama on Windows.
+  # Sandbox backends need Windows 11 features the hosted runners usually lack, so
+  # sandbox tests skip there.
+  windows:
+    name: load (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: build libmxc_ffi
+        run: |
+          git clone --filter=blob:none https://github.com/microsoft/mxc .mxc
+          git -C .mxc checkout --quiet "$(cat MXC_REF)"
+          cargo build --release -p mxc_ffi --manifest-path .mxc/src/Cargo.toml
+
+      - name: verify
+        env:
+          MXC_FFI_DIR: ${{ github.workspace }}/.mxc/src/target/release
+        run: ./mvnw -B verify
